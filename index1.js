@@ -19,7 +19,7 @@ async function analyseImage(dataURL) {
   const body = {
     contents : [{
       parts: [
-          { text: "Is there a threat in this image? If so, describe this threat in detail"},
+          { text: "Is there a threat in this image? If so, say what the threat is and how there is one"},
           { inline_data: {
               mime_type: "image/png",
               data: base64Data
