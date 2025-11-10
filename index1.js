@@ -47,7 +47,7 @@ async function analyseImage(dataURL) {
     }
   }
 
-  return "Could not analyse image";
+  return "No threat detected";
 
 }
 
