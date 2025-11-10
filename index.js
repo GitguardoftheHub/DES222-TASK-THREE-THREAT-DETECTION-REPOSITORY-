@@ -1,157 +1,68 @@
-// hard-code the backend server
-let backendURL = 'https://image-analysis-server-weld.vercel.app'
+require('dotenv').config();
+const express = require('express');
+const fetch = require('node-fetch');
+const cors = require('cors');
 
-//-----  Code for accessing the camera -----//
-let width = 320;    // We will scale the photo width to this
-let height = 0;     // This will be computed based on the input stream
-let streaming = false;
-let videoAspectRatio = 1.6;
-let video = document.getElementById('video');
-let canvas = document.getElementById('canvas');
-let output = document.getElementById('photoFrame');
-let photo = document.getElementById('photo');
-let requestButton = document.getElementById('requestButton');
-let takePhotoButton = document.getElementById('takePhotoButton');
-let imageDescription = document.getElementById('imageDescription');
-let homeNav = document.getElementById('homeNav');
-let homeButton = document.getElementById('homeButton');
-let description = document.getElementById('descriptionPanel');
+const app = express();
+const port = 3000;
 
+// allows all cross-origin requests
+app.use(cors())
 
-function clearphoto() {
-    const context = canvas.getContext("2d");
-    context.fillStyle = "#AAA";
-    context.fillRect(0, 0, canvas.width, canvas.height);
+// allow for json parsing of large dataURLs
+app.use(express.json({ limit: '20mb' }));
 
-    const dataURL = canvas.toDataURL("image/png");
-    photo.setAttribute("src", dataURL);
-}
+async function analyseImage(dataURL) {
+  // use the Gemini Vision API
+  const base64Data = dataURL.split(',')[1];
 
-async function takepicture() {
-    const context = canvas.getContext("2d");
-    if (width && height) {
-        canvas.width = width;
-        canvas.height = height;
-        context.drawImage(video, 0, 0, width, height);
+  const body = {
+    contents : [{
+      parts: [
+          { text: "What is this picture?"},
+          { inline_data: {
+              mime_type: "image/png",
+              data: base64Data
+            }}
+          ]}
+        ]
+      };
 
-        const dataURL = canvas.toDataURL("image/png");
-        photo.setAttribute("src", dataURL);
+  const geminiURL=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-        // request AI analysis
-        try {
-            const response = await fetch(backendURL, {
-                method: "POST",
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ imageURL: dataURL })
-              });
-
-            if (!response.ok) {
-                throw new Error(`Response status: ${response.status}`);
-            }
-
-            const json = await response.json();
-            console.log(json);
-            imageDescription.textContent = json['description'];
-            showPhotoView();
-
-        } catch (error) {
-            console.error(error.message);
-        }
-
-    } else {
-        clearphoto();
+  const response = await fetch(geminiURL, {
+    method: 'post',
+    body: JSON.stringify(body),
+    headers: {'Content-Type': 'application/json'}
+  });
+  const result = await response.json();
+ 
+  // Gemini Flash generative api returns an array of 'candidates'
+  if (result.candidates && result.candidates.length) {
+    const candidate = result.candidates[0];
+    if (candidate.content && candidate.content['parts'] && candidate.content['parts'].length) {
+      const description = candidate.content.parts[0]['text'];
+      console.log(description);
+      return description;
     }
-}
+  }
 
-
-async function setupCameraExample() {
-    let stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.srcObject = stream;
-    video.play();
-    video.addEventListener(
-        "canplay",
-        (ev) => {
-            if (!streaming) {
-                width = video.videoWidth;
-                height = video.videoHeight;
-                videoAspectRatio = video.videoWidth / video.videoHeight;
-                resizeCameraExample();
-                streaming = true;
-            }
-        },
-        false,
-    );
-    
-    clearphoto();
-    window.addEventListener('resize', resizeCameraExample);
+  return "Could not analyse image";
 
 }
 
 
-function showLiveCameraView() {
-    cameraPanel.setAttribute('style', 'display: flex');
-    photoPanel.setAttribute('style', 'display: none');   
-    homeNav.setAttribute('style', 'display: none');
-}
-
-function showPhotoView() {
-    cameraPanel.setAttribute('style', 'display: none');
-    photoPanel.setAttribute('style', 'display: flex');
-    homeNav.setAttribute('style', 'display: flex');
-}
+app.get('/', async (req, res) => {  
+  res.json({ message: "This API expects a POST request with a base64 encoded dataURL in the imageURL property" });
+})
 
 
-function resizeCameraExample() {
-    // Find the usable width and height
-    let w = document.documentElement.clientWidth;
-    let h = document.documentElement.clientHeight;   
+app.post('/', async (req, res) => {  
+  let result = await analyseImage(req.body['imageURL']);
+  res.json({ description: result });
+})
 
-    let fitsHorizontally = (0.95 * h * videoAspectRatio < w);
+app.listen(port, () => {
+  console.log(`Example app listening on port ${port}`)
+})
 
-    if (fitsHorizontally) {
-        video.setAttribute("height", 0.95 * h);
-        video.setAttribute("width", 0.95 * h * videoAspectRatio);
-        canvas.setAttribute("height", 0.95 * h);
-        canvas.setAttribute("width", 0.95 * h * videoAspectRatio);
-    
-        photo.setAttribute('style', `width: ${0.95 * h * videoAspectRatio}px; height: ${0.95 * h}px;`);
-        description.setAttribute('style', `width: ${0.95 * h * videoAspectRatio}px; height: ${0.95 * h}px;`);
-
-    } else {
-    
-        video.setAttribute("width", 0.95 * w);
-        video.setAttribute("height", 0.95 * w / videoAspectRatio);
-        canvas.setAttribute("width", 0.95 * w);
-        canvas.setAttribute("height", 0.95 * w / videoAspectRatio);
-        photo.setAttribute('style', `width: ${0.95 * w}px; height: ${0.95 * w / videoAspectRatio}px;`);
-        description.setAttribute('style', `width: ${0.95 * w}px; height: ${0.95 * w / videoAspectRatio}px;`);
-
-    }
-}
-
-  
-takePhotoButton.addEventListener(
-    "click",
-    (ev) => {
-        takepicture();
-        ev.preventDefault();
-    },
-    false,
-);
-
-
-requestButton.addEventListener(
-    "click",
-    async (ev) => {
-        await setupCameraExample();
-        requestButton.setAttribute('style', 'display: none;');
-        cameraPanel.setAttribute('style', 'display: flex;');
-    }
-);
-
-
-homeButton.addEventListener('click', (event) => {
-    showLiveCameraView();
-});
